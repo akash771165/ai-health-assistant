@@ -25,14 +25,6 @@ st.set_page_config(
 
 
 # =========================================================
-# SESSION STATE
-# =========================================================
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-
-# =========================================================
 # TITLE
 # =========================================================
 
@@ -202,14 +194,14 @@ with st.expander("View Health Profile"):
         st.write(f"**Activity:** {activity}")
         st.write(f"**Goal:** {goal}")
         st.write(f"**Diet Type:** {diet_type}")
-
         st.write(
             f"**Food Allergies:** "
             f"{allergies if allergies else 'None reported'}"
         )
-
         st.write(f"**BMI:** {bmi}")
-        st.write(f"**Protein Target:** {protein} g/day")
+        st.write(
+            f"**Protein Target:** {protein} g/day"
+        )
 
 
 # =========================================================
@@ -239,10 +231,20 @@ with tab1:
         "your health profile, diet type, goal and allergies."
     )
 
+    st.caption(
+        f"Target: approximately {calories:.0f} kcal/day "
+        f"and {protein:.0f} g protein/day"
+    )
+
     if st.button(
         "Get Diet Recommendations",
-        type="primary"
+        type="primary",
+        key="diet_button"
     ):
+
+        # -------------------------------------------------
+        # RAG SEARCH
+        # -------------------------------------------------
 
         with st.spinner(
             "Searching nutrition knowledge..."
@@ -251,11 +253,11 @@ with tab1:
             try:
 
                 search_query = f"""
-Diet type: {diet_type}
+Diet Type: {diet_type}
 
 Goal: {goal}
 
-Food allergies:
+Food Allergy:
 {allergies if allergies else "None reported"}
 
 Find useful nutrition information about:
@@ -291,33 +293,53 @@ meal planning.
                     f"Knowledge base unavailable: {e}"
                 )
 
+
+        # -------------------------------------------------
+        # DIET RECOMMENDATION PROMPT
+        # -------------------------------------------------
+
         diet_prompt = f"""
 You are a helpful AI nutrition assistant.
 
-Use the following nutrition knowledge to create
-a simple one-day diet plan.
+Use the following nutrition knowledge
+to create a simple one-day diet plan.
 
 NUTRITION KNOWLEDGE:
 
 {context}
 
+
 USER INFORMATION:
 
 Age: {age}
+
 Gender: {gender}
+
 Height: {height} cm
+
 Weight: {weight} kg
+
 Activity Level: {activity}
+
 Goal: {goal}
+
 Diet Type: {diet_type}
-Food Allergy: {allergies if allergies else "None reported"}
+
+Food Allergy:
+{allergies if allergies else "None reported"}
 
 Estimated BMI: {bmi}
-BMI Category: {bmi_status}
+
 Estimated BMR: {bmr} kcal/day
+
 Estimated TDEE: {tdee} kcal/day
-Estimated Daily Calorie Target: {calories} kcal/day
-Estimated Protein Target: {protein} g/day
+
+Estimated Daily Calorie Target:
+{calories} kcal/day
+
+Estimated Protein Target:
+{protein} g/day
+
 
 CREATE THE FOLLOWING:
 
@@ -327,6 +349,7 @@ CREATE THE FOLLOWING:
 4. Evening Snack
 5. Dinner
 
+
 FOR EVERY MEAL PROVIDE:
 
 - Food
@@ -334,27 +357,39 @@ FOR EVERY MEAL PROVIDE:
 - Approximate calories
 - Approximate protein
 
+
 IMPORTANT RULES:
 
-1. Respect the user's diet type.
-2. Do not recommend foods containing the stated allergy.
-3. If the allergy information is unclear, do not assume
-   that a food is safe.
-4. For packaged foods, advise checking ingredient labels
-   when allergens may be present.
-5. Use the provided nutrition knowledge when possible.
-6. Keep the plan simple and practical.
-7. Calorie and protein values are estimates.
-8. Do not diagnose diseases.
-9. Do not prescribe medicines.
-10. Do not claim to cure diseases.
-11. Do not claim that this plan is a medical prescription.
-12. This is general wellness information, not medical advice.
-13. Do not invent information from the knowledge base.
-14. If the knowledge base does not contain useful information,
-    clearly identify the recommendation as a general estimate.
-15. If the user has a serious allergy or medical condition,
-    recommend consulting a qualified healthcare professional.
+- Respect the user's diet type.
+
+- Do not recommend foods containing
+  the stated allergy.
+
+- If the allergy information is unclear,
+  do not assume that a food is safe.
+
+- For packaged or processed foods,
+  advise checking the ingredient label
+  when allergens may be present.
+
+- Use the provided nutrition knowledge
+  when possible.
+
+- Keep the plan simple and practical.
+
+- Calorie and protein values are estimates.
+
+- Do not diagnose diseases.
+
+- Do not prescribe medicines.
+
+- Do not claim to cure diseases.
+
+- Do not claim that this plan is
+  a medical prescription.
+
+- This is general wellness information,
+  not medical advice.
 """
 
         diet_messages = [
@@ -364,9 +399,16 @@ IMPORTANT RULES:
             },
             {
                 "role": "user",
-                "content": "Create my personalized one-day diet plan."
+                "content": (
+                    "Create my personalized "
+                    "one-day diet plan."
+                )
             }
         ]
+
+        # -------------------------------------------------
+        # GENERATE DIET PLAN
+        # -------------------------------------------------
 
         with st.spinner(
             "AI is creating your personalized diet plan..."
@@ -407,126 +449,178 @@ with tab2:
         "vegetarian foods, meal planning and wellness."
     )
 
-    for message in st.session_state.messages:
+    # -----------------------------------------------------
+    # QUESTION BOX
+    # -----------------------------------------------------
 
-        with st.chat_message(
-            message["role"]
-        ):
-
-            st.markdown(
-                message["content"]
-            )
-
-    user_question = st.chat_input(
-        "Ask your health or nutrition question..."
+    question = st.text_area(
+        "Ask About Health and Nutrition",
+        placeholder=(
+            "e.g. Good vegetarian sources of protein"
+        ),
+        height=120
     )
 
-    if user_question:
+    # -----------------------------------------------------
+    # ASK AI BUTTON
+    # -----------------------------------------------------
 
-        st.session_state.messages.append(
-            {
-                "role": "user",
-                "content": user_question
-            }
-        )
+    if st.button(
+        "Ask AI",
+        type="primary",
+        key="ask_ai_button"
+    ):
 
-        with st.chat_message("user"):
+        if not question.strip():
 
-            st.markdown(
-                user_question
+            st.warning(
+                "Please enter a health or nutrition question."
             )
 
-        with st.spinner(
-            "Searching nutrition knowledge..."
-        ):
+        else:
 
-            try:
+            # ---------------------------------------------
+            # RAG SEARCH
+            # ---------------------------------------------
 
-                documents = search_knowledge(
-                    user_question,
-                    k=4
-                )
+            with st.spinner(
+                "Searching nutrition knowledge..."
+            ):
 
-                context = "\n\n".join(
-                    [
-                        doc.page_content
-                        for doc in documents
-                    ]
-                )
+                try:
 
-            except Exception as e:
+                    documents = search_knowledge(
+                        question,
+                        k=4
+                    )
 
-                context = ""
+                    context = "\n\n".join(
+                        [
+                            doc.page_content
+                            for doc in documents
+                        ]
+                    )
 
-                st.warning(
-                    f"Knowledge base unavailable: {e}"
-                )
+                except Exception as e:
 
-        system_prompt = f"""
+                    context = ""
+
+                    st.warning(
+                        f"Knowledge base unavailable: {e}"
+                    )
+
+
+            # ---------------------------------------------
+            # CHATBOT PROMPT
+            # ---------------------------------------------
+
+            chatbot_prompt = f"""
 You are an AI health and nutrition assistant.
 
-Use the following knowledge to answer the user's question.
+Use the following knowledge to answer
+the user's question.
 
 NUTRITION KNOWLEDGE:
 
 {context}
 
+
 USER INFORMATION:
 
 Age: {age}
+
 Gender: {gender}
+
 Height: {height} cm
+
 Weight: {weight} kg
+
 Activity Level: {activity}
+
 Goal: {goal}
+
 Diet Type: {diet_type}
-Food Allergy: {allergies if allergies else "None reported"}
+
+Food Allergy:
+{allergies if allergies else "None reported"}
 
 Estimated BMI: {bmi}
+
 Estimated BMR: {bmr} kcal/day
+
 Estimated TDEE: {tdee} kcal/day
-Estimated Daily Calorie Target: {calories} kcal/day
-Estimated Protein Target: {protein} g/day
+
+Estimated Daily Calorie Target:
+{calories} kcal/day
+
+Estimated Protein Target:
+{protein} g/day
+
 
 USER QUESTION:
 
-{user_question}
+{question}
+
 
 INSTRUCTIONS:
 
-1. Answer clearly.
-2. Keep the explanation beginner-friendly.
-3. Use the provided knowledge when possible.
-4. Do not invent medical facts.
-5. Do not invent information from the knowledge base.
-6. Do not diagnose diseases.
-7. Do not prescribe medicines.
-8. Do not claim to cure diseases.
-9. Respect the user's diet type.
-10. Do not recommend foods containing a stated food allergy.
-11. If allergy information is unclear, do not assume that a food is safe.
-12. Treat BMI, BMR, TDEE, calorie and protein values as estimates.
-13. If the question concerns a serious medical problem,
-    recommend consulting a qualified healthcare professional.
-14. If the knowledge base does not contain enough information,
-    say so instead of inventing an answer.
-15. This application provides general health and nutrition
-    information for educational and wellness purposes.
-16. This is not a substitute for professional medical advice.
+- Answer clearly.
+
+- Keep the explanation beginner-friendly.
+
+- Use the provided knowledge when possible.
+
+- Do not invent medical facts.
+
+- Do not diagnose diseases.
+
+- Do not prescribe medicines.
+
+- Do not claim to cure diseases.
+
+- Respect the user's diet type.
+
+- Do not recommend foods containing
+  the stated food allergy.
+
+- If the allergy information is unclear,
+  do not assume that a food is safe.
+
+- Treat BMI, BMR, TDEE, calorie and
+  protein values as estimates.
+
+- If the question concerns a serious
+  medical problem, recommend consulting
+  a qualified healthcare professional.
+
+- If the knowledge base does not contain
+  enough information to answer confidently,
+  say so instead of inventing an answer.
+
+This application provides general health
+and nutrition information for educational
+and wellness purposes.
+
+This is not a substitute for professional
+medical advice.
 """
 
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            }
-        ]
 
-        messages.extend(
-            st.session_state.messages[-10:]
-        )
+            # ---------------------------------------------
+            # SEND TO LLM
+            # ---------------------------------------------
 
-        with st.chat_message("assistant"):
+            messages = [
+                {
+                    "role": "system",
+                    "content": chatbot_prompt
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ]
+
 
             with st.spinner(
                 "AI is preparing your answer..."
@@ -538,23 +632,18 @@ INSTRUCTIONS:
                         messages
                     )
 
-                except Exception as e:
+                    st.subheader("AI Response")
 
-                    answer = (
-                        "Sorry, AI response generate "
-                        f"nahi ho saka.\n\nError: {e}"
+                    st.markdown(
+                        answer
                     )
 
-            st.markdown(
-                answer
-            )
+                except Exception as e:
 
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": answer
-            }
-        )
+                    st.error(
+                        "AI response generate nahi ho saka.\n\n"
+                        f"Error: {e}"
+                    )
 
 
 # =========================================================
